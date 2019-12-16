@@ -18,19 +18,34 @@ class coursescraperSpider(scrapy.Spider):
         'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=LE&subject=EECS&academicyear=2019&studysession=FW',
         'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=GS&subject=EECS&academicyear=2019&studysession=fw',
         'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=AP&subject=ADMS&academicyear=2019&studysession=fw',
+        #'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=LE&subject=EECS&academicyear=2019&studysession=FW',
+        #'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=GS&subject=EECS&academicyear=2019&studysession=fw',
+        #'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=AP&subject=ADMS&academicyear=2019&studysession=fw',
         ]
     def parse(self, response):
+        # Courses Main site put these in a separate crawler
+        url = "https://w2prod.sis.yorku.ca"
 
         # prints course code and credits in an array, ex: AP/ADMS 1500 3.00
         course_list = response.css('td[width="16%"]::text').extract()
         course_names = response.css('td[width="24%"]::text').extract()
+        course_site = response.css('td[width="30%"]').css('a::attr(href)').extract() 
+        # gets links to 'subject' course on page before selecting term and courses
+        #s1 = response.css("ul.bodytext").css("a::attr(href)").extract()
+        #subject_link = s1[0]
 
-        for rows in course_list:
+        #url = url + subject_link
+
+        print(url)
+        for (code,name,site) in zip(course_list, course_names, course_site):
             yield {
-                'course code' : rows
+                #'course code' : rows
+                'name' : code + " " + name + " link: " + url + site
             }
 
+        '''
         for row in course_names:
             yield {
                 'course name' : row
             }
+        '''
