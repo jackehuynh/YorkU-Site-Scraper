@@ -1,51 +1,69 @@
-fa = 'faculty'
-sj = 'subject'
-cn = 'course number'
-cr = 'credit amount'
-ay = 'academic year'
-ss = 'study session'
+# -*- coding: utf-8 -*-
+
+fa = 'faculty' # LE
+sj = 'subject' # EECS
+cn = 'course number' # 2011
+cr = 'credit amount' # 3.00
+ay = 'academic year' # 2019
+ss = 'study session' # FW
 
 link = 'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq?fa='+ fa + '&sj=' + sj + '&cn=' + cn + '&cr=' + cr + '&ay=' + ay + '&ss=' + ss
+# 'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq?fa=LE&sj=EECS&cn=1019&cr=3.00&ay=2019&ss=FW
 
 import scrapy
-from scrapy.selector import Selector
+import csv
+import os.path
 
+# Gets list of course names and it's course code
 class coursescraperSpider(scrapy.Spider):
-    name = "york_scraper"
-    user_agent = 'Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36'
-    
-    start_urls = [
-        'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=LE&subject=EECS&academicyear=2019&studysession=FW',
-        'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=GS&subject=EECS&academicyear=2019&studysession=fw',
-        'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=AP&subject=ADMS&academicyear=2019&studysession=fw',
-        #'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=LE&subject=EECS&academicyear=2019&studysession=FW',
-        #'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=GS&subject=EECS&academicyear=2019&studysession=fw',
-        #'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=AP&subject=ADMS&academicyear=2019&studysession=fw',
-        ]
+    csv_location = "../csv/"
+    name = "course_links"
+
+    def start_requests(self):
+        headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:48.0) Gecko/20100101 Firefox/48.0'}
+        file_name = self.csv_location + "subjects.csv"
+        urls = []
+
+        with open(file_name, mode="r") as file:
+            reader = csv.reader(file, delimiter=',')
+            year = "2019"
+            session = "FW"
+
+            for data in reader:
+                faculty = data[2]
+                subject = data[0]
+                url = "https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=" + faculty + "&subject=" + subject + "&academicyear=" + year + "&studysession=" + session
+                urls.append(url)
+
+        for url in urls:
+            yield scrapy.Request(url=url, headers=headers, callback=self.parse)
+
     def parse(self, response):
+        # default mode to set to file is to write 
+        file_mode = "w"
+        file_name = self.csv_location + "courseinfo.csv"
+
+        # check if file exists, append, else create and set buffer to write
+        if os.path.isfile(file_name):
+            file_mode = "a"
+        else:
+            file_mode = "w"
+
         # Courses Main site put these in a separate crawler
         url = "https://w2prod.sis.yorku.ca"
 
         # prints course code and credits in an array, ex: AP/ADMS 1500 3.00
-        course_list = response.css('td[width="16%"]::text').extract()
-        course_names = response.css('td[width="24%"]::text').extract()
-        course_site = response.css('td[width="30%"]').css('a::attr(href)').extract() 
-        # gets links to 'subject' course on page before selecting term and courses
-        #s1 = response.css("ul.bodytext").css("a::attr(href)").extract()
-        #subject_link = s1[0]
+        course_list = response.css('td[width="16%"]::text').getall()
+        course_names = response.css('td[width="24%"]::text').getall()
+        course_site = response.css('td[width="30%"]').css('a::attr(href)').getall() 
 
-        #url = url + subject_link
+        with open(file_name, mode=file_mode, newline='') as file:
+            writer = csv.writer(file)
 
-        print(url)
-        for (code,name,site) in zip(course_list, course_names, course_site):
-            yield {
-                #'course code' : rows
-                'name' : code + " " + name + " link: " + url + site
-            }
-
-        '''
-        for row in course_names:
-            yield {
-                'course name' : row
-            }
-        '''
+            for (code,name,site) in zip(course_list, course_names, course_site):
+                writer.writerow([code, name, url+site])
+                # course['name'] = code + " " + name
+                # course['link'] = url + site
+                # yield {
+                #     'name' : code + " " + name + " link: " + url + site
+                # }
