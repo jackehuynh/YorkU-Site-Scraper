@@ -36,15 +36,22 @@ class SubjectScraper(scrapy.Spider):
         
         # list of subjects and its corresponding faculties (ie. ACTG - Accounting - (SB, ED))
         subject_list = response.css('select[name="subjectPopUp"]').css("option::text").getall()
-
+       
         with open(file_name, mode="w", encoding="utf-8", newline='') as file:
-            writer = csv.writer(file)
+            header_fields = ['subject_code', 'subject_name', 'faculty']
+            writer = csv.DictWriter(file, fieldnames=header_fields)
+            writer.writeheader()
 
             for subjects in subject_list:
-                subject_dict = subjects.split("-")
-                subject_code = subject_dict[0].strip()
-                subject_name = subject_dict[1].strip()
-                faculty = subject_dict[2].replace("(","").replace(")","").replace(" ","").split(",")
-            
+                subject_arr = subjects.split("-")
+                subject_code = subject_arr[0].strip()
+                subject_name = subject_arr[1].strip()
+                faculty = subject_arr[2].replace("(","").replace(")","").replace(" ","").split(",")
+               
                 for i in range(len(faculty)):
-                    writer.writerow([subject_code, subject_name, faculty[i]])
+                    subject_dict = {'subject_code':subject_code,
+                                    'subject_name':subject_name,
+                                    'faculty':faculty[i]}
+
+                    #yield (subject_dict)
+                    writer.writerow(subject_dict)
