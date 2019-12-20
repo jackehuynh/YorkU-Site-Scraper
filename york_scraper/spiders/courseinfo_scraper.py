@@ -49,6 +49,8 @@ class CourseInfoScraper(scrapy.Spider):
     def set_course_url(self, response):
         u = "https://w2prod.sis.yorku.ca"
         url = u + response.xpath('//a[contains(text(), "Fall")]').css("a:attr(href)").get()
+
+        # Sends request to the 'Timetable' link on the course's page
         yield scrapy.Request(url=url, callback=self.parse)
 
     def parse(self, response):
@@ -57,7 +59,7 @@ class CourseInfoScraper(scrapy.Spider):
         # HTML element that contains section of course info (description, title, times)
         table_body = response.css("table[cellpadding='10']")
 
-        # extract all text within <p> tags in the table body
+        # extract all text within <p> tags in the outer table body containing all the inner tables with the course info
         p_text = table_body.css('p::text').getall()
 
         course_description = p_text[1]
@@ -79,20 +81,28 @@ class CourseInfoScraper(scrapy.Spider):
 
         # returns array of days and the location corresponding to those days
         day = body[i].css("td[width='15%']::text").getall()
-        loc = body[i].css("td[width='45%']::text").getall()
+        loc = body[i].css("td[width='45%']::text").getall() # ['LAS C', 'LAS C']
 
         # example used is EECS 1019
         cat = body[i].css("td[width='20%']").getall()[-2] # need to clean up
-        cat_id = re.sub('<td width=\"20%\" valign=\"TOP\">', '', cat).strip()
-        cat_id = re.sub('<br></td>', '', cat_id).strip()
-        cat_id = cat_id.split('<br>') # ['Y21A01 (LE EECS)', 'E10C01 (SC MATH)']
+        cat_id = re.sub('<td width=\"20%\" valign=\"TOP\">', '', cat).strip() # 'Y21A01 (LE EECS) <br>E10C01 (SC MATH) <br></td>
+        cat_id = cat_id.strip('<br></td>').strip() # 'Y21A01 (LE EECS) <br>E10C01 (SC MATH)'
+        cat_id = cat_id.split('<br>') # ['Y21A01 (LE EECS) ', 'E10C01 (SC MATH)']
+        parsed_cat = [string.replace('\xa0','').strip() for string in cat_id] # ['Y21A01 (LE EECS)', 'E10C01 (SC MATH)']
 
+        instructors = body[i].css("td[width='15%']").css("a::text").getall() # ['Andranik\xa0Mirzaian']
+        times = body[i].css("td[width='35%']").getall() # ['time_slot']
+        time_slots = times[1].css("tr").getall() # ['day1', 'day2']
+        day_1 = time_slots[0].css("td::text").getall() # M 17:30 90 LAS\xa0C 
+        day_2 = time_slots[1].css("td::text").getall() # R 17:30 90 LAS\xa0C
 
-        inst = body[i].css("td[width='15%']").css("a::text").getall() # ['Andranik Mirzaian']
-        time = body[i].css("td[width='35%']").getall() # ['time_slot']
-        time_slot = time[1].css("tr").getall() # ['day1', 'day2']
-        day_1 = time_slot[0].css("td::text").getall() # M 17:30 90 LAS C 
-        day_2 = time_slot[1].css("td::text").getall() # R 17:30 90 LAS C
+        # removing the '\xa0' string from the parsed text
+        parsed_instructors = [string.replace('\xa0',' ') for string in instructors] # ['Andranik Mirazaian']
+
+        # TODO: probably turn these list comprehensions into functions 
+        parsed_day = [string.replace('\xa0', '').strip() for string in day_1] # ['M', '17:30', '90', 'LAS C']
+        parsed_section = [string.replace('\xa0', '').strip() for string in sections] # ['Section A', 'Section B', 'Section C', etc]
+
         
         '''
         TODO: add info_dict to scrapy's item feature
@@ -114,8 +124,10 @@ class CourseInfoScraper(scrapy.Spider):
         Example of how the rest api's structure is going to look like
         course = {'course_name': name,
                   'description': desc,
+                  'faculty': faculty,
                   'subject': subject,
                   'credit': credit,
+                  'academic_year' : year
                   'Pre-requisites': yes or no, if yes have a list of the courses,
                   'info': ['info_dict']
                   }
