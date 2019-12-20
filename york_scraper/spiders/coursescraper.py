@@ -15,6 +15,10 @@ class CourseScraper(scrapy.Spider):
         file_name = self.csv_location + "subjects.csv"
         urls = []
 
+        '''
+        TODO: add try-throw block to throw an error if file does not exist
+        '''
+
         with open(file_name, mode="r") as file:
             reader = csv.DictReader(file, delimiter=',')
             year = "2019"
@@ -75,6 +79,7 @@ class CourseScraper(scrapy.Spider):
         '''
         TODO: remove extra " characters in some course's names
         '''
+        
         if name.find('\"') != -1:
             name = re.sub('\"', '', name)
 
