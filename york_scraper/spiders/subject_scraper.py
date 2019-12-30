@@ -34,7 +34,7 @@ class SubjectScraper(scrapy.Spider):
         scraping of course subjects due to use of AJAX on this page. In addition, can possibly
         stop scraping for 2019-2020 Fall/Winter courses at this point.
 
-        2) Incorporate session name into a JSON object
+        2) Have session name as a dictionary field?
         '''
 
         # list of session names (ie. Fall/Winter 2019-2020 or Summer 2020)
@@ -47,13 +47,12 @@ class SubjectScraper(scrapy.Spider):
             subject_arr = subjects.split("-")
             subject_code = subject_arr[0].strip()
             subject_name = subject_arr[1].strip()
+            
             faculty = subject_arr[2].replace("(","").replace(")","").replace(" ","").split(",")
                
             for i in range(len(faculty)):
                 item = YorkSubjectItem()
-
                 item['code'] = subject_code
                 item['name'] = subject_name
                 item['faculty'] = faculty[i]
-
                 yield item
