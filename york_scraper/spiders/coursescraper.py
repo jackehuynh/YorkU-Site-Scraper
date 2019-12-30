@@ -42,8 +42,6 @@ class CourseScraper(scrapy.Spider):
             yield scrapy.Request(url=url, headers=headers, callback=self.parse)
 
     def parse(self, response):
-        # TODO: allow user to choose to output to any file type of their choice?
-
         # parses course code and name ex: AP/ADMS 1500 3.00
         course_codes = response.css('td[width="16%"]::text').getall()
         course_names = response.css('td[width="24%"]::text').getall()
