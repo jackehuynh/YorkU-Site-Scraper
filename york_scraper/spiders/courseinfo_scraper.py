@@ -1,11 +1,22 @@
 import scrapy
 import csv
+from w3lib.html import remove_tags
 from york_scraper.items import YorkCourseInfoItem, YorkCourseItem
 
+# Scrape all course information from York's Course Website
 class CourseInfoScraper(scrapy.Spider):
     name = "course_info"
     headers = {
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:48.0) Gecko/20100101 Firefox/48.0'
+    }
+    custom_settings = {
+        'FEED_EXPORTER': 'JsonLinesItemExporter',
+        'FEED_FORMAT': 'jsonlines',
+        'FEED_URI': 'data/info.json',
+        'ITEM_PIPELINES': {
+            'york_scraper.pipelines.CheckDuplicatePipeline': 200,
+            'york_scraper.pipelines.YorkCourseInfoPipeline': 300
+        }
     }
     u = "https://w2prod.sis.yorku.ca"
 
@@ -15,15 +26,15 @@ class CourseInfoScraper(scrapy.Spider):
 
     def start_requests(self):
         file_name = "csv/courses.csv"
-        urls = []
         course_list = []
 
         '''
         TODO: 
         1) add try-throw block to throw an error if file does not exist
         2) make it customizable for other terms not just FW
-        3) Handle duplicates?
-        4) use w3lib.html module 'remove_tags' and unicode.strip method to handle cleaning text more efficiently
+        3) log errors to a custom file so if a course fails to be scraped, it can start up
+           a separate (essentially an exact version of this one but for single link(s) only) crawler
+           to try to rescrape it. Do this for coursescraper.py too.
         '''
         
         with open(file_name, mode="r") as file:
@@ -48,14 +59,15 @@ class CourseInfoScraper(scrapy.Spider):
                 dont_filter = True,
                 meta = {'course_dict': course}
             )
-        #for course_url in urls:
-           #yield scrapy.Request(url=course_url, headers=self.headers, callback=self.set_course_url, dont_filter = True)
         #t = 'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq?fa=GS&sj=HUMA&cn=6000B&cr=3.00&ay=2019&ss=FW'
         #yield scrapy.Request(url=t, headers=self.headers, callback=self.set_course_url, dont_filter = True)
 
     def set_course_url(self, response):
         # TODO: implement xpath for summer courses once it's available
-        url = self.u + response.xpath('//a[contains(text(), "Fall")]/@href').get()
+
+        # Some course websites have duplicates for some reason IE: FA/FILM 2230 and GL/BIOL 2300
+        # As a result the first link directs to a cancelled class whereas the subsequent links are the reinstated class.
+        url = self.u + response.xpath('//a[contains(text(), "Fall")]/@href').getall()[-1]
 
         # Sends request to the 'Timetable' link on the course's page
         yield scrapy.Request(
@@ -70,28 +82,25 @@ class CourseInfoScraper(scrapy.Spider):
         course = YorkCourseInfoItem()
         
         course_dict = response.meta['course_dict']
-        #yield extracted_course_dict
-
         course['faculty'] = course_dict['faculty']
         course['subject'] = course_dict['subject']
         course['course_number'] = course_dict['code']
         course['credit'] = course_dict['credit']
         course['name'] = course_dict['name']
 
-        '''
-        TODO: Extract language of instructions
-        '''
-
         # HTML element that contains section of description, title, and times
         table_body = response.css("table[cellpadding='10']")
 
         # extract all text within <p> tags in the outer table body containing all the inner tables with the course info
         course_description = table_body.xpath('//b[contains(text(), "Course Description")]/../following-sibling::p[1]').get()
-        course['description'] = course_description.replace('<p>','').replace('</p>','').replace('\r','').replace('\t','').replace('\n','').replace('\\','')
+        course['description'] = remove_tags(course_description).replace('\r','').replace('\n','').replace('\t','')
+
+        # Language of Instructions (language that's used in teaching the course)
+        course['loi'] = remove_tags(table_body.xpath('//b[contains(text(), "Language of Instruction:")]/../following-sibling::p[1]').get())
 
         # extracts html element (red bar) containing term and section
         t_s = table_body.css("td[width='50%']")
-        terms = [string.strip() for string in t_s.css("b::text").getall()]
+        terms = [string.strip('Term').strip() for string in t_s.css("b::text").getall()]
         sections = [string.strip() for string in t_s.css("font::text").getall()]
 
         # grabs the outer table element holding ALL the course offerings
@@ -143,7 +152,8 @@ class CourseInfoScraper(scrapy.Spider):
                     if location is None:
                         location = ''
                     else:
-                        location = location.replace('<td width="45%" valign="TOP">', '').replace('<br>', '').replace('</td>', '').replace('\xa0', '')
+                        location = remove_tags(location)
+                        #location = location.replace('<td width="45%" valign="TOP">', '').replace('<br>', '').replace('</td>', '').replace('\xa0', '')
                         location = ' '.join(location.split())
 
                     time_info_dict = {
@@ -176,7 +186,8 @@ class CourseInfoScraper(scrapy.Spider):
                 notes = notes_element.css("td").get()
                 notes_list = notes.replace('<td valign="TOP" width="20%">', '').replace('<br>\xa0</td>', '').replace('\xa0', '').replace('</td>', '')
                 notes_list = notes_list.replace('\r', '').replace('\n', '').split('<br>')
-
+                #notes_list = remove_tags(notes, keep=('br',)).replace('<br>\xa0', '').split('<br>')
+                
                 if notes_list[0] == '\xa0</td>' or notes_list[0] == '':
                     # For courses where there isn't a note or extra information, it's appropriate to keep this empty
                     notes_list = []
