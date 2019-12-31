@@ -22,9 +22,7 @@ class YorkCourseItem(scrapy.Item):
     url = scrapy.Field()
 
 class YorkCourseInfoItem(scrapy.Item):
-    '''
-    TODO: Add fields for prerequisites, academic year, and LOI (Language of Instructions)
-    '''
+    # TODO: Add field for prerequisite
     faculty = scrapy.Field()
     subject = scrapy.Field()
     course_number = scrapy.Field()
@@ -33,3 +31,4 @@ class YorkCourseInfoItem(scrapy.Item):
     credit = scrapy.Field()
     offerings = scrapy.Field()
     url = scrapy.Field()
+    loi = scrapy.Field() # Language of instruction
