@@ -9,7 +9,10 @@ class SubjectScraper(scrapy.Spider):
     custom_settings = {
         'FEED_FORMAT': 'csv',
         'FEED_URI': 'csv/subjects.csv',
-        'FEED_EXPORT_FIELDS': ['code', 'name', 'faculty']
+        'FEED_EXPORT_FIELDS': ['code', 'name', 'faculty'],
+        'ITEM_PIPELINES': {
+            'york_scraper.pipelines.YorkSubjectPipeline' : 200
+        }
     }
 
     def start_requests(self):
