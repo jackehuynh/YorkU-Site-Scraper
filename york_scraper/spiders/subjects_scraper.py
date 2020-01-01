@@ -1,19 +1,22 @@
 import scrapy
 import csv
+import json
 from york_scraper.items import YorkSubjectItem
 
 # grabs list of subjects from York's subject page
 class SubjectScraper(scrapy.Spider):
     name = "subjects"
-
     custom_settings = {
         'FEED_FORMAT': 'csv',
         'FEED_URI': 'csv/subjects.csv',
-        'FEED_EXPORT_FIELDS': ['code', 'name', 'faculty'],
+        'FEED_EXPORT_FIELDS': ['faculty', 'subject', 'name', 'expanded_name'],
         'ITEM_PIPELINES': {
             'york_scraper.pipelines.YorkSubjectPipeline' : 200
         }
     }
+
+    with open ('data/faculty.json', 'r') as f:
+        faculty_dict = json.load(f)
 
     def start_requests(self):
         start_url = ["https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm"]
@@ -27,7 +30,6 @@ class SubjectScraper(scrapy.Spider):
         # response selector should output /App/WebObjects/cdm.woa/.. 
         # it's the first result of the ul tag with class=bodytext
         url = u + response.css("ul.bodytext").css("a::attr(href)").get()
-
         yield scrapy.Request(url=url, callback=self.get_subjects)
 
     def get_subjects(self, response):
@@ -39,7 +41,6 @@ class SubjectScraper(scrapy.Spider):
 
         2) Have session name as a dictionary field?
         '''
-
         # list of session names (ie. Fall/Winter 2019-2020 or Summer 2020)
         session_list = response.css('select[name="sessionPopUp"]').css("option::text").getall()
         
@@ -47,15 +48,17 @@ class SubjectScraper(scrapy.Spider):
         subject_list = response.css('select[name="subjectPopUp"]').css("option::text").getall()
 
         for subjects in subject_list:
-            subject_arr = subjects.split("-")
+            subject_arr = subjects.split("-", 1)
+            subject_arr_2 = subject_arr[1].split('- (')
             subject_code = subject_arr[0].strip()
-            subject_name = subject_arr[1].strip()
+            subject_name = subject_arr_2[0].strip()
             
-            faculty = subject_arr[2].replace("(","").replace(")","").replace(" ","").split(",")
+            faculty = subject_arr_2[1].replace(")","").replace(" ","").split(",")
                
             for i in range(len(faculty)):
                 item = YorkSubjectItem()
-                item['code'] = subject_code
-                item['name'] = subject_name
                 item['faculty'] = faculty[i]
+                item['subject'] = subject_code
+                item['name'] = subject_name
+                item['expanded_name'] = self.faculty_dict[faculty[i]]
                 yield item
