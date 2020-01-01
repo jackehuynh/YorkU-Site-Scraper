@@ -9,7 +9,6 @@ from york_scraper.items import YorkCourseItem
 # Gets list of course names, course code, subject, credit amount, and direct url
 class CourseScraper(scrapy.Spider):
     name = "courses"
-
     custom_settings = {
         'FEED_FORMAT': 'csv',
         'FEED_URI': 'csv/courses.csv',
