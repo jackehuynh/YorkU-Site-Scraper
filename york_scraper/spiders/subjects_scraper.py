@@ -9,7 +9,7 @@ class SubjectScraper(scrapy.Spider):
     custom_settings = {
         'FEED_FORMAT': 'csv',
         'FEED_URI': 'csv/subjects.csv',
-        'FEED_EXPORT_FIELDS': ['faculty', 'subject', 'name', 'expanded_name'],
+        'FEED_EXPORT_FIELDS': ['faculty', 'subject', 'name', 'expanded_name', 'url'],
         'ITEM_PIPELINES': {
             'york_scraper.pipelines.YorkSubjectPipeline' : 200
         }
@@ -47,6 +47,9 @@ class SubjectScraper(scrapy.Spider):
         # list of subjects and its corresponding faculties (ie. ACTG - Accounting - (SB, ED))
         subject_list = response.css('select[name="subjectPopUp"]').css("option::text").getall()
 
+        year = '2019'
+        session = 'FW'
+
         for subjects in subject_list:
             subject_arr = subjects.split("-", 1)
             subject_arr_2 = subject_arr[1].split('- (')
@@ -61,4 +64,6 @@ class SubjectScraper(scrapy.Spider):
                 item['subject'] = subject_code
                 item['name'] = subject_name
                 item['expanded_name'] = self.faculty_dict[faculty[i]]
+                item['url'] = "https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq1?faculty=" + \
+                    faculty[i] + "&subject=" + subject_code + "&academicyear=" + year + "&studysession=" + session
                 yield item

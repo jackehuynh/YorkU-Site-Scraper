@@ -12,6 +12,7 @@ class YorkSubjectItem(scrapy.Item):
     subject = scrapy.Field()
     name = scrapy.Field()
     expanded_name = scrapy.Field() # Full name of abbreviated faculty
+    url = scrapy.Field()
 
 # Just has the basic info of a course (name, faculty, subject, etc.)
 class YorkCourseItem(scrapy.Item):
