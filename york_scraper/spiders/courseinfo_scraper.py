@@ -1,95 +1,99 @@
 import scrapy
-import csv
+import os
+import json
 from w3lib.html import remove_tags
+from scrapy.selector import Selector
 from york_scraper.items import YorkCourseInfoItem, YorkCourseItem
+from york_scraper.spiders.courses_scraper import CourseScraper
+from selenium import webdriver
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.chrome.options import Options
+from datetime import datetime
 
-# Scrape all course information from York's Course Website
+# Scrape all course information from York's Course Website using Selenium & Scrapy selectors
 class CourseInfoScraper(scrapy.Spider):
-    name = "course_info"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:48.0) Gecko/20100101 Firefox/48.0'
-    }
-    custom_settings = {
-        'FEED_EXPORTER': 'JsonLinesItemExporter',
-        'FEED_FORMAT': 'jsonlines',
-        'FEED_URI': 'data/info.json',
-        'ITEM_PIPELINES': {
-            'york_scraper.pipelines.CheckDuplicatePipeline': 200,
-            'york_scraper.pipelines.YorkCourseInfoPipeline': 300
-        }
-    }
-    u = "https://w2prod.sis.yorku.ca"
-
     # Keys to construct the dictionaries
+    name = "course_info_scrape"
     course_info_keys = ["type", "meet_info", "cat", "instructor", "notes"]
     nested_keys = ["term", "section", "course_info"]
 
-    def start_requests(self):
-        file_name = "csv/courses.csv"
-        course_list = []
+    def __init__(self):
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        # suppress console(22) prompt when running headless
+        chrome_options.add_argument("--log-level=3")
+        self.driver = webdriver.Chrome(executable_path='chromedriver.exe', chrome_options=chrome_options)
+        self.driver.implicitly_wait(1)
 
-        '''
-        TODO: 
-        1) add try-throw block to throw an error if file does not exist
-        2) make it customizable for other terms not just FW
-        3) log errors to a custom file so if a course fails to be scraped, it can start up
-           a separate (essentially an exact version of this one but for single link(s) only) crawler
-           to try to rescrape it. Do this for coursescraper.py too.
-        '''
-        
-        with open(file_name, mode="r") as file:
-            reader = csv.DictReader(file, delimiter=',')
+    def access_subject_page(self):
+        url = 'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm'
+        self.driver.get(url)
+        self.driver.find_element_by_link_text('Subject').click()
 
-            # Populate course list to pass it's data to parse method
-            for data in reader:
-                course_item = YorkCourseItem()
-                course_item['faculty'] = data['faculty']
-                course_item['subject'] = data['subject']
-                course_item['code'] = data['code']
-                course_item['credit'] = data['credit']
-                course_item['name'] = data['name']
-                course_item['url'] = data['url']
-                course_list.append(course_item)
-        
-        for course in course_list:
-            yield scrapy.Request(
-                url = course['url'], 
-                headers = self.headers, 
-                callback = self.set_course_url, 
-                dont_filter = True,
-                meta = {'course_dict': course}
-            )
-        #t = 'https://w2prod.sis.yorku.ca/Apps/WebObjects/cdm.woa/wa/crsq?fa=GS&sj=HUMA&cn=6000B&cr=3.00&ay=2019&ss=FW'
-        #yield scrapy.Request(url=t, headers=self.headers, callback=self.set_course_url, dont_filter = True)
+    def parse(self):
+        start_time = datetime.now()
+        self.access_subject_page()
 
-    def set_course_url(self, response):
-        # TODO: implement xpath for summer courses once it's available
+        # Grab subject option elements
+        subject_table = self.driver.find_element_by_xpath("//select[@name='subjectPopUp']")
+        options = subject_table.find_elements_by_tag_name("option")
 
-        # Some course websites have duplicates for some reason IE: FA/FILM 2230 and GL/BIOL 2300
-        # As a result the first link directs to a cancelled class whereas the subsequent links are the reinstated class.
-        url = self.u + response.xpath('//a[contains(text(), "Fall")]/@href').getall()[-1]
+        # TODO: include option for summer session
+        # session_table = self.driver.find_element_by_xpath("//select[@name='sessionPopUp]")
+
+        # Select each subject
+        for i in range(len(options)):
+            subject_options = Select(self.driver.find_element_by_name('subjectPopUp'))
+            subject_options.select_by_index(i)
+            self.driver.find_element_by_name('3.10.7.5').click()
+            self.set_course_url()
+            # Go back to subject page
+            self.access_subject_page()
+            print('elapsed time: ' + str(datetime.now() - start_time))
+
+        self.driver.close()
+        print('Total execution time: ' + str(datetime.now() - start_time))
+
+    def set_course_url(self):
+        scrapy_selector = Selector(text = self.driver.page_source)
+
+        w2_url = 'https://w2prod.sis.yorku.ca'
+
+        # Grab all course schedule links
+        urls = scrapy_selector.xpath('//a[contains(text(), "Course Schedule")]/@href').getall()
+
+        # ex. SB/ACTG 2010 3.00
+        course_codes = scrapy_selector.css('td[width="16%"]::text').getall()
+
+        # ex. Introduction To Financial Accounting I
+        course_names = scrapy_selector.css('td[width="24%"]::text').getall()
+        cs = CourseScraper()
 
         # Sends request to the 'Timetable' link on the course's page
-        yield scrapy.Request(
-            url = url, 
-            headers = self.headers, 
-            callback = self.parse, 
-            dont_filter = True,
-            meta = {'course_dict': response.meta['course_dict']}
-        )
+        for i in range(len(urls)):
+            # have to call the selector again since it doesn't exist once call returns from extract_course_info function
+            url_list = urls
+            url = w2_url+url_list[i]
+            course_dict = cs.parse_course_and_subject_code(course_codes[i], course_names[i])
+            self.driver.get(url)
+            self.extract_course_info(course_dict)
 
-    def parse(self, response):
-        course = YorkCourseInfoItem()
-        
-        course_dict = response.meta['course_dict']
+    def extract_course_info(self, course_dict):
+        #course = YorkCourseInfoItem()
+        course_keys = ['faculty', 'subject', 'course_number', 'credit', 'name', 'description', 'loi', 'offerings', 'url']
+        course = dict.fromkeys(course_keys)
         course['faculty'] = course_dict['faculty']
         course['subject'] = course_dict['subject']
         course['course_number'] = course_dict['code']
         course['credit'] = course_dict['credit']
         course['name'] = course_dict['name']
 
+        file_name = 'data/data.json'
+
+        scrapy_selector = Selector(text = self.driver.page_source)
+
         # HTML element that contains section of description, title, and times
-        table_body = response.css("table[cellpadding='10']")
+        table_body = scrapy_selector.css("table[cellpadding='10']")
 
         # extract all text within <p> tags in the outer table body containing all the inner tables with the course info
         course_description = table_body.xpath('//b[contains(text(), "Course Description")]/../following-sibling::p[1]').get()
@@ -104,7 +108,7 @@ class CourseInfoScraper(scrapy.Spider):
         sections = [string.strip() for string in t_s.css("font::text").getall()]
 
         # grabs the outer table element holding ALL the course offerings
-        body = response.css("table[border='2']")
+        body = scrapy_selector.css("table[border='2']")
 
         # List of all the different sections being offered for this particular course
         course_offerings = []
@@ -153,7 +157,6 @@ class CourseInfoScraper(scrapy.Spider):
                         location = ''
                     else:
                         location = remove_tags(location)
-                        #location = location.replace('<td width="45%" valign="TOP">', '').replace('<br>', '').replace('</td>', '').replace('\xa0', '')
                         location = ' '.join(location.split())
 
                     time_info_dict = {
@@ -166,13 +169,14 @@ class CourseInfoScraper(scrapy.Spider):
             
                 # cat element is right after time_info element
                 cat_element = time.xpath('following-sibling::td[@width="20%" and @valign="TOP"]')
-                cat_list = time.xpath('string(following-sibling::td[@width="20%" and @valign="TOP"])').getall()
-                cat_list = [string.replace('\xa0', '').replace('  ', '').strip() for string in cat_list]
+                cat_list = time.xpath('string(following-sibling::td[@width="20%" and @valign="TOP"])').get()
+                cat_list = cat_list.replace('\xa0', '').replace('  ', '').strip()
 
+                '''
                 if cat_list.count('') > 0:
                     # When the Cat # column has nothing in it
                     cat_list = []
-
+                '''
                 # instructor element is right beside cat_element
                 instructor_element = cat_element[0].xpath('following-sibling::td[@valign="TOP" and @width="15%"]')
                 instructor_list = instructor_element.css('td ::text').getall()
@@ -204,4 +208,17 @@ class CourseInfoScraper(scrapy.Spider):
             
         course['offerings'] = course_offerings
         course['url'] = course_dict['url']
-        yield course
+        print('Parsing: ' + course_dict['faculty'] + '/' + course_dict['subject'] + ' ' + course_dict['code'] + ' ' + 
+        course_dict['credit'] + ' ' + course_dict['name'])
+
+        if os.path.exists(file_name):
+            filemode = 'a'
+        else:
+            filemode = 'w'
+
+        # Write to json file
+        with open(file_name, filemode, encoding='utf-8') as f:
+            json.dump(course, f, ensure_ascii=False, indent = 4, separators = (',', ': '))
+
+c = CourseInfoScraper()
+c.parse()
